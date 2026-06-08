@@ -1,0 +1,19 @@
+# Copy to cloudflared-config.yml and fill in your own values.
+tunnel: <YOUR_TUNNEL_ID>
+credentials-file: /path/to/.cloudflared/<YOUR_TUNNEL_ID>.json
+
+ingress:
+  - hostname: trade-api.your-domain.com
+    service: http://localhost:3001
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 10s
+  - hostname: trade.your-domain.com
+    service: http://localhost:5001
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 10s
+  # NOTE: Avoid exposing databases publicly. Prefer a private network / Cloudflare Access.
+  # - hostname: db-trade.your-domain.com
+  #   service: tcp://localhost:5433
+  - service: http_status:404

@@ -1,0 +1,8 @@
+FROM diegosouzapw/omniroute:latest
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && git config --system url."https://github.com/".insteadOf "ssh://git@github.com/"
+
+RUN npm install -g --no-audit --no-fund @openai/codex

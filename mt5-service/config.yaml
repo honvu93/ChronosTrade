@@ -1,0 +1,69 @@
+# mt5-service/config.yaml
+# Nguồn sự thật duy nhất cho symbols/timeframes.
+# KHÔNG hardcode ở bất kỳ file .py nào khác.
+
+# Timezone của MT5 broker (Exness summer: GMT+3, winter: GMT+2)
+# Xem danh sách: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+broker_timezone: "Etc/GMT-3"
+
+# Số worker song song khi fetch MT5 (khuyến nghị: 4)
+# MT5 dùng 1 connection — lock được dùng để serialize API calls
+fetch_workers: 4
+
+# Interval live collection (giây)
+# 10s đủ để cập nhật giá đang chạy mà không flood MT5/backend.
+live_interval_seconds: 10
+
+# Số bar mới nhất lấy mỗi lần live poll.
+# Giữ >1 để luôn refresh được current bar và 1-2 bar gần nhất.
+live_fetch_bars_per_timeframe: 3
+
+# Số ngày fetch khi không có data trong DB (full historical sync)
+historical_days: 30
+
+# Retry config cho pusher
+retry_max_attempts: 3
+retry_buffer_size: 1000
+
+timeframes:
+  - M1
+  - M5
+  - M15
+  - M30
+  - H1
+  - H2
+  - H3
+  - H4
+  - H12
+  - D1
+  - W1
+  - MN1
+
+symbols:
+  # Metals
+  - mt5: "XAUUSDc"
+    tv: "XAUUSD"
+    market: "metal"
+    aliases:
+      - "XAUUSDc"
+    enabled: true
+
+  - mt5: "XAGUSDc"
+    tv: "XAGUSD"
+    market: "metal"
+    aliases:
+      - "XAGUSDc"
+    enabled: true
+
+  # Crypto qua MT5
+  - mt5: "BTCUSDc"
+    tv: "BTCUSD"
+    market: "crypto"
+    aliases:
+      - "BTCUSDc"
+    enabled: true
+
+  # Thêm symbol mới: chỉ thêm block dưới, không sửa code Python
+  # - mt5: "EURUSDc"
+  #   tv: "EURUSD"
+  #   enabled: false

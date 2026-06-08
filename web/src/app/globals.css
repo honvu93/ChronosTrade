@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+@theme {
+  /* Stitch TradeHVV Design System — dark trading terminal */
+  --color-bg-primary: #0F172A;
+  --color-bg-secondary: #080E1B;
+  --color-bg-tertiary: #1E293B;
+  --color-bg-card: #0D1525;
+  --color-border-base: #334155;
+  --color-border-muted: #1E293B;
+  --color-accent: #3B82F6;
+  --color-accent-glow: rgba(59, 130, 246, 0.25);
+  --color-text-primary: #F8FAFC;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted: #475569;
+  --color-price-up: #10B981;
+  --color-price-down: #EF4444;
+  --color-price-neutral: #64748B;
+  --color-semantic-success: #10B981;
+  --color-semantic-warning: #F59E0B;
+  --color-semantic-error: #EF4444;
+  --color-error: #EF4444;
+
+  --font-sans: "Inter", var(--font-geist-sans), ui-sans-serif, system-ui;
+  --font-mono: "Space Grotesk", var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  --shadow-premium: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glass: 0 4px 24px rgba(0, 0, 0, 0.3);
+
+  --backdrop-blur-xs: 2px;
+}
+
+@layer base {
+  * {
+    @apply border-border-muted;
+    transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+  }
+
+  body {
+    @apply bg-bg-secondary text-text-primary antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    background:
+      radial-gradient(circle at top, rgba(59, 130, 246, 0.08), transparent 40%),
+      linear-gradient(180deg, #080E1B 0%, #0B1220 50%, #080E1B 100%);
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply border border-border-muted/80 bg-bg-primary/78 backdrop-blur-xl;
+    box-shadow: 0 18px 48px rgba(4, 10, 22, 0.24);
+  }
+
+  .text-gradient {
+    background-image: linear-gradient(90deg, #e7edf7 0%, #d7e4ff 52%, #4d8cff 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .command-deck-canvas {
+    background:
+      radial-gradient(circle at top, rgba(77, 140, 255, 0.16), transparent 34%),
+      linear-gradient(180deg, #08101c 0%, #0b1220 44%, #0a1324 100%);
+  }
+
+  .command-deck-surface {
+    background: linear-gradient(180deg, rgba(17, 26, 43, 0.96) 0%, rgba(13, 22, 37, 0.98) 100%);
+    box-shadow: 0 24px 72px rgba(4, 10, 22, 0.28);
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111a2b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #31445f;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4a5f80;
+}
+
+@keyframes scroll {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-scroll {
+  animation: scroll 30s linear infinite;
+}
+
+.animate-scroll:hover {
+  animation-play-state: paused;
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.3);
+  }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}

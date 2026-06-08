@@ -1,0 +1,55 @@
+# Thư mục thư viện & Build
+node_modules/
+dist/
+web/.test-dist/
+mt5-service/__pycache__/
+
+# Môi trường local (Local environment configurations)
+.env
+.env.prod
+web/.env.local
+mt5-service/.env
+mt5-service/.trade-exec.env
+infrastructure/backup.env
+OmniRoute/.env.omniroute-a
+OmniRoute/.env.omniroute-b
+OmniRoute/.env.omniroute-c
+OmniRoute/.codex/
+vps_key
+vps_key.pub
+
+# Database dumps, backups & logs (Bảo mật tuyệt đối)
+*.dump
+*.sql
+*.log
+*.txt
+*.docx
+.backups/
+backups/
+db/
+move-new-pc/db/
+logs/
+.artifacts/
+artifacts/
+.graphify_*
+graphify-out/
+web/lint.txt
+web/lint_errors.log
+web/tsc.txt
+web/tsc_errors.log
+mt5-service/.sync*_state.json
+
+# Cấu hình IDE & Công cụ local
+.claude/settings.local.json
+.vscode/
+.gstack/
+.DS_Store
+
+# Sinh bởi Prisma
+/generated/prisma
+
+# Local infra config (use cloudflared-config.example.yml as template)
+cloudflared-config.yml
+*.zip
+# Local security review (chứa thông tin nhạy cảm)
+SECURITY-REVIEW-PRE-PUBLIC.md

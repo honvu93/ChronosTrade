@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+# ── helpers ──────────────────────────────────────────
+
+cwd_for_pid() {
+  lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p'
+}
+
+collect_pids_for_cwd() {
+  local pattern="$1"
+  local target_cwd="$2"
+  local pid pid_cwd
+
+  pgrep -f "$pattern" 2>/dev/null | while read -r pid; do
+    pid_cwd="$(cwd_for_pid "$pid")"
+    if [ "$pid_cwd" = "$target_cwd" ]; then
+      printf "%s\n" "$pid"
+    fi
+  done
+}
+
+wait_for_shutdown() {
+  local pid="$1"
+  local attempts=0
+
+  while kill -0 "$pid" 2>/dev/null; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 50 ]; then
+      return 1
+    fi
+    sleep 0.1
+  done
+  return 0
+}
+
+stop_process_group() {
+  local label="$1"
+  shift
+  local pids=("$@")
+  local pid
+
+  [ "${#pids[@]}" -gt 0 ] || return 0
+
+  echo "[trade-dev] Stopping existing $label process(es): ${pids[*]}"
+  kill "${pids[@]}" 2>/dev/null || true
+
+  for pid in "${pids[@]}"; do
+    wait_for_shutdown "$pid" || {
+      echo "[trade-dev] $label process $pid did not exit after TERM" >&2
+      return 1
+    }
+  done
+}
+
+wait_for_any_child() {
+  while true; do
+    for pid in "${child_pids[@]:-}"; do
+      if ! kill -0 "$pid" 2>/dev/null; then
+        wait "$pid"
+        return $?
+      fi
+    done
+    sleep 1
+  done
+}
+
+read_tunnel_id_from_config() {
+  local config_path="$1"
+  local line
+
+  [ -f "$config_path" ] || return 1
+
+  line="$(grep -E '^tunnel:' "$config_path" | head -n 1 || true)"
+  [ -n "$line" ] || return 1
+  printf "%s\n" "${line#tunnel: }"
+}
+
+resolve_path() {
+  python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"
+}
+
+stop_conflicting_tunnel_processes() {
+  local desired_config="$1"
+  local desired_tunnel_id="$2"
+  local pid command current_config current_tunnel_id
+
+  [ -n "$desired_tunnel_id" ] || return 0
+
+  while read -r pid command; do
+    [ -n "$pid" ] || continue
+
+    case "$command" in
+      *"--config "*)
+        current_config="${command#*--config }"
+        current_config="${current_config%% *}"
+        ;;
+      *)
+        continue
+        ;;
+    esac
+
+    current_config="$(resolve_path "$current_config" 2>/dev/null || true)"
+    [ -n "$current_config" ] && [ -f "$current_config" ] || continue
+
+    current_tunnel_id="$(read_tunnel_id_from_config "$current_config" || true)"
+    [ "$current_tunnel_id" = "$desired_tunnel_id" ] || continue
+    [ "$current_config" = "$desired_config" ] && continue
+
+    echo "[trade-dev] Stopping conflicting cloudflared connector $pid"
+    kill "$pid" 2>/dev/null || true
+    wait_for_shutdown "$pid" || true
+  done < <(ps ax -o pid= -o command= | grep 'cloudflared tunnel' | grep -v grep)
+}
+
+stop_existing_repo_processes() {
+  local be_pids=()
+  local fe_pids=()
+  local pid
+
+  while read -r pid; do
+    [ -n "$pid" ] && be_pids+=("$pid")
+  done < <(collect_pids_for_cwd "ts-node src/main.ts" "$ROOT_DIR" | sort -u)
+
+  while read -r pid; do
+    [ -n "$pid" ] && fe_pids+=("$pid")
+  done < <(
+    {
+      collect_pids_for_cwd "next dev" "$ROOT_DIR/web"
+      collect_pids_for_cwd "next-server" "$ROOT_DIR/web"
+    } | sort -u
+  )
+
+  [ "${#be_pids[@]}" -gt 0 ] && stop_process_group "backend" "${be_pids[@]}"
+  [ "${#fe_pids[@]}" -gt 0 ] && stop_process_group "frontend" "${fe_pids[@]}"
+}
+
+# ── usage ────────────────────────────────────────────
+
+usage() {
+  cat <<'EOF'
+Usage: trade-dev [--with-tunnel] [--skip-infra] [--help]
+
+Starts the AntiGravity Trade dev stack:
+- TimescaleDB + Redis via docker compose (unless --skip-infra)
+- Backend API on :3001
+- Frontend dev server on :5001
+- Optionally starts Cloudflare tunnel to trade.your-domain.com
+
+Examples:
+  trade-dev                 # BE + FE only
+  trade-dev --with-tunnel   # BE + FE + Cloudflare tunnel
+  trade-dev --skip-infra    # skip docker compose up
+EOF
+}
+
+# ── args ─────────────────────────────────────────────
+
+with_tunnel=0
+skip_infra=0
+tunnel_config="$ROOT_DIR/cloudflared-config.yml"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --with-tunnel)
+      with_tunnel=1
+      ;;
+    --skip-infra)
+      skip_infra=1
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "[trade-dev] Unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+# ── preflight ────────────────────────────────────────
+
+echo "[trade-dev] ROOT_DIR=$ROOT_DIR"
+
+stop_existing_repo_processes
+
+if [ "$skip_infra" -eq 0 ]; then
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "[trade-dev] Docker is required. Re-run with --skip-infra if DB/Redis are already available." >&2
+    exit 1
+  fi
+  echo "[trade-dev] Starting docker compose (TimescaleDB + Redis)..."
+  docker compose up -d
+fi
+
+if [ ! -d "$ROOT_DIR/node_modules" ]; then
+  echo "[trade-dev] Installing backend dependencies..."
+  npm install
+fi
+
+if [ ! -d "$ROOT_DIR/web/node_modules" ]; then
+  echo "[trade-dev] Installing frontend dependencies..."
+  npm --prefix web install
+fi
+
+# ── start services ───────────────────────────────────
+
+declare -a child_pids=()
+cleanup() {
+  local pid
+  echo ""
+  echo "[trade-dev] Shutting down..."
+  for pid in "${child_pids[@]:-}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  for pid in "${child_pids[@]:-}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+  echo "[trade-dev] All services stopped."
+}
+trap cleanup EXIT INT TERM
+
+echo "[trade-dev] Starting backend on :3001..."
+(cd "$ROOT_DIR" && exec npm run dev) &
+child_pids+=("$!")
+
+echo "[trade-dev] Starting frontend on :5001..."
+(cd "$ROOT_DIR" && exec npm --prefix web run dev) &
+child_pids+=("$!")
+
+if [ "$with_tunnel" -eq 1 ]; then
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    echo "[trade-dev] cloudflared is required for --with-tunnel." >&2
+    exit 1
+  fi
+
+  if [ ! -f "$tunnel_config" ]; then
+    echo "[trade-dev] Tunnel config not found: $tunnel_config" >&2
+    exit 1
+  fi
+
+  tunnel_config_resolved="$(resolve_path "$tunnel_config")"
+  tunnel_id="$(read_tunnel_id_from_config "$tunnel_config_resolved" || true)"
+  stop_conflicting_tunnel_processes "$tunnel_config_resolved" "$tunnel_id"
+
+  if pgrep -f "cloudflared tunnel.*$(basename "$tunnel_config")" >/dev/null 2>&1; then
+    echo "[trade-dev] Reusing existing cloudflared tunnel"
+  else
+    echo "[trade-dev] Starting cloudflared tunnel → trade.your-domain.com"
+    (cd "$ROOT_DIR" && exec cloudflared tunnel --config "$tunnel_config" run) &
+    child_pids+=("$!")
+  fi
+fi
+
+echo ""
+echo "[trade-dev] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "[trade-dev]   Backend:   http://localhost:3001"
+echo "[trade-dev]   Frontend:  http://localhost:5001"
+if [ "$with_tunnel" -eq 1 ]; then
+echo "[trade-dev]   Public:    https://trade.your-domain.com"
+fi
+echo "[trade-dev] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "[trade-dev]   Ctrl+C to stop all services"
+echo ""
+
+wait_for_any_child
+exit_code=$?
+echo "[trade-dev] A child process exited with code $exit_code" >&2
+exit "$exit_code"

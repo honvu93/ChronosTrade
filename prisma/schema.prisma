@@ -1,0 +1,910 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum PositionSide {
+  LONG
+  SHORT
+}
+
+enum TradingSession {
+  ASIAN
+  LONDON
+  NY
+}
+
+enum ExitReason {
+  STOP_LOSS
+  TAKE_PROFIT_1
+  TAKE_PROFIT_2
+  BREAK_EVEN
+  TRAILING_STOP
+  EXPIRATION
+  MANUAL
+  OPEN
+}
+
+enum SignalSourceType {
+  IMPORTED
+  GENERATED
+}
+
+enum BacktestRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum SignalEventType {
+  TRAP
+  X1
+  ENTRY
+  ENTRY_CONFIRMED
+  FAIL
+  COMPLETE_Y
+  MOVE_SL_BE
+  TRAIL_START
+  TRAIL_UPDATE
+  TP1_HIT
+  TP2_HIT
+  STOP_HIT
+  EXPIRATION
+}
+
+enum OptimizationJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum IndicatorStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  FAILED
+  ARCHIVED
+}
+
+enum AppRole {
+  ADMIN
+  USER
+}
+
+enum AppModule {
+  CHART
+  SIGNAL
+  REPORT
+  TRADING
+  ENGINE
+}
+
+enum TradingInvestigationRootCause {
+  DATA_QUALITY
+  SIGNAL_LOGIC
+  RISK_SETTINGS
+  BROKER_EXECUTION
+}
+
+enum TradingInvestigationOutcome {
+  RESOLVED
+  MITIGATED
+  ESCALATED
+}
+
+enum TradingWebhookDeliveryStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum BrokerKind {
+  MT5
+}
+
+enum TradingAccountStatus {
+  PENDING
+  ACTIVE
+  DISCONNECTED
+  ERROR
+  ARCHIVED
+}
+
+enum TradingAccountMode {
+  LIVE
+  PAPER
+}
+
+enum TradingSyncKind {
+  SUMMARY
+  POSITIONS
+  ORDERS
+  DEALS
+  FULL
+}
+
+enum TradingSyncStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+}
+
+enum TradingPositionStatus {
+  OPEN
+  CLOSED
+}
+
+enum TradingOrderType {
+  MARKET
+  BUY_LIMIT
+  SELL_LIMIT
+  BUY_STOP
+  SELL_STOP
+}
+
+enum TradingOrderStatus {
+  PENDING
+  PLACED
+  PARTIALLY_FILLED
+  FILLED
+  CANCELED
+  REJECTED
+  EXPIRED
+}
+
+enum ExecutionCommandType {
+  OPEN_MARKET
+  CLOSE_POSITION
+  PARTIAL_CLOSE
+  PLACE_PENDING
+  MODIFY_POSITION
+  CANCEL_ORDER
+  FORCE_SYNC
+}
+
+enum ExecutionCommandStatus {
+  PENDING
+  VALIDATED
+  DISPATCHED
+  ACKNOWLEDGED
+  COMPLETED
+  REJECTED
+  FAILED
+  RECONCILED
+}
+
+enum TradingAutomationMode {
+  OBSERVE
+  MANUAL_APPROVAL
+  AUTO_EXECUTE
+}
+
+enum TradingAutomationBindingStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum TradeIntentStatus {
+  QUEUED
+  PROCESSING
+  EXECUTED
+  REJECTED
+  FAILED
+}
+
+model Candle {
+  time             DateTime
+  symbol           String   @db.VarChar(20)
+  timeframe        String   @db.VarChar(10)
+  exchange         String   @db.VarChar(20)
+  open             Decimal  @db.Decimal(20, 8)
+  high             Decimal  @db.Decimal(20, 8)
+  low              Decimal  @db.Decimal(20, 8)
+  close            Decimal  @db.Decimal(20, 8)
+  volume           Decimal  @db.Decimal(20, 8)
+  quote_volume     Decimal? @db.Decimal(20, 8)
+  trades           Int?
+  taker_buy_volume Decimal? @db.Decimal(20, 8)
+  is_closed        Boolean  @default(true)
+
+  @@id([time, symbol, timeframe, exchange])
+  @@map("price_candles")
+}
+
+model Strategy {
+  id           String        @id @default(cuid())
+  code         String        @unique @db.VarChar(40)
+  name         String        @db.VarChar(80)
+  description  String?
+  isActive     Boolean       @default(true) @map("is_active")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+  signals      Signal[]
+  backtestRuns BacktestRun[]
+
+  @@map("strategies")
+}
+
+model ExitRule {
+  id          String                @id @default(cuid())
+  code        String                @unique @db.VarChar(40)
+  name        String                @db.VarChar(80)
+  description String?
+  configJson  Json?                 @map("config_json")
+  isActive    Boolean               @default(true) @map("is_active")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  results     BacktestTradeResult[]
+
+  @@map("exit_rules")
+}
+
+model Signal {
+  id                  String                @id @default(cuid())
+  backtestRunId       String?               @map("backtest_run_id")
+  backtestRun         BacktestRun?          @relation(fields: [backtestRunId], references: [id], onDelete: SetNull)
+  sourceType          SignalSourceType      @default(IMPORTED) @map("source_type")
+  definitionCode      String?               @map("definition_code") @db.VarChar(60)
+  definitionVersion   Int?                  @map("definition_version")
+  executionConfigJson Json?                 @map("execution_config_json")
+  externalKey         String?               @map("external_key") @db.VarChar(120)
+  symbol              String                @db.VarChar(20)
+  timeframe           String                @db.VarChar(10)
+  side                PositionSide
+  strategyId          String                @map("strategy_id")
+  strategy            Strategy              @relation(fields: [strategyId], references: [id], onDelete: Restrict)
+  session             TradingSession
+  entryTime           DateTime              @map("entry_time")
+  entryPrice          Decimal               @map("entry_price") @db.Decimal(20, 8)
+  stopLoss            Decimal               @map("stop_loss") @db.Decimal(20, 8)
+  takeProfit1         Decimal?              @map("take_profit_1") @db.Decimal(20, 8)
+  takeProfit2         Decimal?              @map("take_profit_2") @db.Decimal(20, 8)
+  invalidationPrice   Decimal?              @map("invalidation_price") @db.Decimal(20, 8)
+  notes               String?
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+  results             BacktestTradeResult[]
+  events              SignalEvent[]
+  logicTraces         SignalLogicTrace[]
+
+  @@index([backtestRunId, entryTime])
+  @@index([sourceType, definitionCode, definitionVersion])
+  @@index([symbol, timeframe, entryTime])
+  @@index([strategyId, session])
+  @@map("signals")
+}
+
+model BacktestRun {
+  id                  String                 @id @default(cuid())
+  sourceType          SignalSourceType       @default(IMPORTED) @map("source_type")
+  status              BacktestRunStatus      @default(COMPLETED)
+  signalCode          String?                @map("signal_code") @db.VarChar(60)
+  signalVersion       Int?                   @map("signal_version")
+  parametersJson      Json?                  @map("parameters_json")
+  executionConfigJson Json?                  @map("execution_config_json")
+  errorMessage        String?                @map("error_message")
+  name                String                 @db.VarChar(120)
+  symbol              String                 @db.VarChar(20)
+  timeframe           String                 @db.VarChar(10)
+  strategyId          String?                @map("strategy_id")
+  strategy            Strategy?              @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  side                PositionSide?
+  initialEquity       Decimal                @map("initial_equity") @db.Decimal(20, 8)
+  riskPercent         Decimal                @map("risk_percent") @db.Decimal(10, 4)
+  notes               String?
+  startedAt           DateTime               @default(now()) @map("started_at")
+  finishedAt          DateTime?              @map("finished_at")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+  signals             Signal[]
+  events              SignalEvent[]
+  logicTraces         SignalLogicTrace[]
+  results             BacktestTradeResult[]
+  sourceIndicators    IndicatorInstance[]
+  optimizationRun     SignalOptimizationRun?
+
+  @@index([symbol, timeframe, createdAt])
+  @@index([sourceType, signalCode, signalVersion, createdAt])
+  @@index([strategyId])
+  @@map("backtest_runs")
+}
+
+model BacktestTradeResult {
+  id             String         @id @default(cuid())
+  backtestRunId  String         @map("backtest_run_id")
+  backtestRun    BacktestRun    @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+  signalId       String         @map("signal_id")
+  signal         Signal         @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  exitRuleId     String         @map("exit_rule_id")
+  exitRule       ExitRule       @relation(fields: [exitRuleId], references: [id], onDelete: Restrict)
+  resultSide     PositionSide   @map("result_side")
+  session        TradingSession
+  win            Boolean
+  isOpen         Boolean        @default(false) @map("is_open")
+  rMultiple      Decimal        @map("r_multiple") @db.Decimal(20, 8)
+  pnlUsd         Decimal        @map("pnl_usd") @db.Decimal(20, 8)
+  maxDrawdownPct Decimal        @default(0) @map("max_drawdown_pct") @db.Decimal(10, 4)
+  exitReason     ExitReason     @map("exit_reason")
+  exitTime       DateTime?      @map("exit_time")
+  exitPrice      Decimal?       @map("exit_price") @db.Decimal(20, 8)
+  notes             String?
+  decisionLogJson   Json?          @map("decision_log_json") @db.JsonB
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  @@unique([backtestRunId, signalId, exitRuleId])
+  @@index([backtestRunId, session])
+  @@index([exitRuleId, win])
+  @@map("backtest_trade_results")
+}
+
+model SignalDefinition {
+  id              String   @id @default(cuid())
+  code            String   @db.VarChar(60)
+  version         Int
+  name            String   @db.VarChar(120)
+  category        String?  @db.VarChar(60)
+  description     String?
+  parameterSchema Json     @map("parameter_schema")
+  indicatorSchema Json?    @map("indicator_schema")
+  eventSchema     Json?    @map("event_schema")
+  isActive        Boolean  @default(true) @map("is_active")
+  // Composed signal fields
+  composedBlocks  Json?    @map("composed_blocks")
+  isComposed      Boolean  @default(false) @map("is_composed")
+  createdBy       String?  @map("created_by") @db.VarChar(60)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([code, version])
+  @@map("signal_definitions")
+}
+
+/// Catalog of pre-built indicator blocks available in the Signal Composer.
+/// Rows are seeded by developers — users cannot create new indicator types.
+model TechIndicatorDefinition {
+  id                     String    @id @db.VarChar(60)
+  name                   String    @db.VarChar(120)
+  category               String    @db.VarChar(60)
+  description            String?
+  draftName              String?   @map("draft_name") @db.VarChar(120)
+  draftCategory          String?   @map("draft_category") @db.VarChar(60)
+  draftDescription       String?   @map("draft_description")
+  paramSchema            Json      @map("param_schema")
+  draftParamSchema       Json?     @map("draft_param_schema")
+  conditions             Json
+  draftConditions        Json?     @map("draft_conditions")
+  runtimeBindingKey      String?   @map("runtime_binding_key") @db.VarChar(60)
+  draftRuntimeBindingKey String?   @map("draft_runtime_binding_key") @db.VarChar(60)
+  catalogStatus          String    @default("DRAFT") @map("catalog_status") @db.VarChar(20)
+  isActive               Boolean   @default(true) @map("is_active")
+  createdBy              String?   @map("created_by") @db.VarChar(191)
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  updatedBy              String?   @map("updated_by") @db.VarChar(191)
+  draftUpdatedAt         DateTime? @map("draft_updated_at")
+  draftUpdatedBy         String?   @map("draft_updated_by") @db.VarChar(191)
+  publishedAt            DateTime? @map("published_at")
+  publishedBy            String?   @map("published_by") @db.VarChar(191)
+  retiredAt              DateTime? @map("retired_at")
+  retiredBy              String?   @map("retired_by") @db.VarChar(191)
+
+  @@map("tech_indicator_definitions")
+}
+
+model SignalEvent {
+  id                  String               @id @default(cuid())
+  signalId            String?              @map("signal_id")
+  signal              Signal?              @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  indicatorInstanceId String?              @map("indicator_instance_id")
+  indicatorInstance   IndicatorInstance?   @relation(fields: [indicatorInstanceId], references: [id], onDelete: Cascade)
+  backtestRunId       String?              @map("backtest_run_id")
+  backtestRun         BacktestRun?         @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+  eventType           SignalEventType      @map("event_type")
+  candleTime          DateTime             @map("candle_time")
+  cycleNumber         Int                  @default(0) @map("cycle_number")
+  price               Decimal?             @db.Decimal(20, 8)
+  label               String?              @db.VarChar(40)
+  metaJson            Json?                @map("meta_json")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  logicTrace          SignalLogicTrace?
+  tradeIntents        TradingTradeIntent[]
+
+  @@unique([indicatorInstanceId, candleTime, eventType, cycleNumber])
+  @@index([signalId, candleTime])
+  @@index([indicatorInstanceId, candleTime])
+  @@index([backtestRunId, candleTime])
+  @@map("signal_events")
+}
+
+model SignalLogicTrace {
+  id                  String             @id @default(cuid())
+  signalId            String?            @map("signal_id")
+  signal              Signal?            @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  indicatorInstanceId String?            @map("indicator_instance_id")
+  indicatorInstance   IndicatorInstance? @relation(fields: [indicatorInstanceId], references: [id], onDelete: Cascade)
+  signalEventId       String?            @unique @map("signal_event_id")
+  signalEvent         SignalEvent?       @relation(fields: [signalEventId], references: [id], onDelete: Cascade)
+  backtestRunId       String?            @map("backtest_run_id")
+  backtestRun         BacktestRun?       @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+  eventType           SignalEventType    @map("event_type")
+  candleTime          DateTime           @map("candle_time")
+  stateBefore         String?            @map("state_before")
+  stateAfter          String?            @map("state_after")
+  ruleId              String?            @map("rule_id")
+  indicatorJson       Json?              @map("indicator_json")
+  thresholdJson       Json?              @map("threshold_json")
+  priceJson           Json?              @map("price_json")
+  notes               String?
+  createdAt           DateTime           @default(now()) @map("created_at")
+
+  @@index([signalId, candleTime])
+  @@index([indicatorInstanceId, candleTime])
+  @@index([backtestRunId, candleTime])
+  @@map("signal_logic_traces")
+}
+
+model IndicatorInstance {
+  id                      String       @id @default(cuid())
+  name                    String       @db.VarChar(120)
+  status                  String       @default("ACTIVE") @db.Text
+  sourceBacktestRunId     String?      @map("source_backtest_run_id")
+  sourceBacktestRun       BacktestRun? @relation(fields: [sourceBacktestRunId], references: [id], onDelete: Restrict)
+  signalCode              String       @map("signal_code") @db.VarChar(60)
+  signalVersion           Int          @map("signal_version")
+  symbol                  String       @db.VarChar(20)
+  timeframe               String       @db.VarChar(10)
+  parameterJson           Json         @map("parameter_json")
+  executionConfigJson     Json?        @map("execution_config_json")
+  lastProcessedCandleTime DateTime?    @map("last_processed_candle_time")
+  lastEmittedEventTime    DateTime?    @map("last_emitted_event_time")
+  stateJson               Json?        @map("state_json")
+  stateVersion            Int          @default(1) @map("state_version")
+  errorMessage            String?      @map("error_message")
+  startedAt               DateTime?    @map("started_at")
+  stoppedAt               DateTime?    @map("stopped_at")
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+
+  events        SignalEvent[]
+  logicTraces   SignalLogicTrace[]
+  alerts        IndicatorAlert[]
+  tradeBindings TradingAutomationBinding[]
+  tradeIntents  TradingTradeIntent[]
+
+  @@index([sourceBacktestRunId])
+  @@index([symbol, timeframe, status])
+  @@map("indicator_instances")
+}
+
+model SignalOptimizationJob {
+  id                  String                  @id @default(cuid())
+  signalCode          String                  @map("signal_code") @db.VarChar(60)
+  signalVersion       Int                     @map("signal_version")
+  symbol              String                  @db.VarChar(20)
+  timeframe           String                  @db.VarChar(10)
+  startedAt           DateTime                @map("started_at")
+  finishedAt          DateTime?               @map("finished_at")
+  executionConfigJson Json?                   @map("execution_config_json")
+  parameterSpaceJson  Json                    @map("parameter_space_json")
+  rankingConfigJson   Json?                   @map("ranking_config_json")
+  status              OptimizationJobStatus   @default(PENDING)
+  errorMessage        String?                 @map("error_message")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  runs                SignalOptimizationRun[]
+
+  @@index([signalCode, signalVersion, createdAt])
+  @@map("signal_optimization_jobs")
+}
+
+model SignalOptimizationRun {
+  id                String                @id @default(cuid())
+  optimizationJobId String                @map("optimization_job_id")
+  optimizationJob   SignalOptimizationJob @relation(fields: [optimizationJobId], references: [id], onDelete: Cascade)
+  backtestRunId     String                @unique @map("backtest_run_id")
+  backtestRun       BacktestRun           @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+  parameterSetJson  Json                  @map("parameter_set_json")
+  rankingScore      Decimal?              @map("ranking_score") @db.Decimal(20, 8)
+  rankOrder         Int?                  @map("rank_order")
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  @@index([optimizationJobId, rankOrder])
+  @@map("signal_optimization_runs")
+}
+
+model IndicatorAlert {
+  id                String            @id @default(cuid())
+  instanceId        String            @map("instance_id")
+  indicatorInstance IndicatorInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  type              String            @db.Text
+  conditionJson     Json              @map("condition_json")
+  isActive          Boolean           @default(true) @map("is_active")
+  lastTriggeredAt   DateTime?         @map("last_triggered_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  @@index([instanceId])
+  @@map("indicator_alerts")
+}
+
+model User {
+  id                     String             @id @default(cuid())
+  email                  String             @unique @db.VarChar(191)
+  username               String             @unique @db.VarChar(60)
+  displayName            String?            @map("display_name") @db.VarChar(120)
+  passwordHash           String             @map("password_hash") @db.VarChar(255)
+  passwordSalt           String             @map("password_salt") @db.VarChar(255)
+  role                   AppRole            @default(USER)
+  isActive               Boolean            @default(true) @map("is_active")
+  permissions            UserModuleAccess[]
+  tradingAccounts        TradingAccount[]   @relation("OwnedTradingAccounts")
+  activeTradingAccountId String?            @map("active_trading_account_id")
+  activeTradingAccount   TradingAccount?    @relation("ActiveTradingAccount", fields: [activeTradingAccountId], references: [id], onDelete: SetNull)
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  @@index([activeTradingAccountId])
+  @@map("users")
+}
+
+model UserModuleAccess {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module    AppModule
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@unique([userId, module])
+  @@index([module])
+  @@map("user_module_access")
+}
+
+model TradingAccount {
+  id                   String                     @id @default(cuid())
+  ownerUserId          String                     @map("owner_user_id")
+  ownerUser            User                       @relation("OwnedTradingAccounts", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  activeForUsers       User[]                     @relation("ActiveTradingAccount")
+  brokerKind           BrokerKind                 @default(MT5) @map("broker_kind")
+  accountMode          TradingAccountMode         @default(LIVE) @map("account_mode")
+  label                String                     @db.VarChar(120)
+  status               TradingAccountStatus       @default(PENDING)
+  baseCurrency         String?                    @map("base_currency") @db.VarChar(12)
+  leverage             Int?
+  lastSeenAt           DateTime?                  @map("last_seen_at")
+  lastSuccessfulSyncAt DateTime?                  @map("last_successful_sync_at")
+  metadataJson         Json?                      @map("metadata_json")
+  credential           Mt5Credential?
+  snapshots            TradingAccountSnapshot[]
+  syncRuns             TradingSyncRun[]
+  positions            TradingPosition[]
+  orders               TradingOrder[]
+  deals                TradingDeal[]
+  executionCommands    TradingExecutionCommand[]
+  automationBindings   TradingAutomationBinding[]
+  tradeIntents         TradingTradeIntent[]
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+
+  @@index([ownerUserId, updatedAt])
+  @@index([updatedAt])
+  @@map("trading_accounts")
+}
+
+model Mt5Credential {
+  id               String         @id @default(cuid())
+  tradingAccountId String         @unique @map("trading_account_id")
+  tradingAccount   TradingAccount @relation(fields: [tradingAccountId], references: [id], onDelete: Cascade)
+  ciphertext       String         @db.Text
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  @@map("mt5_credentials")
+}
+
+model TradingSyncRun {
+  id                String            @id @default(cuid())
+  accountId         String            @map("account_id")
+  account           TradingAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  syncKind          TradingSyncKind   @map("sync_kind")
+  status            TradingSyncStatus
+  requestedByUserId String?           @map("requested_by_user_id")
+  startedAt         DateTime          @default(now()) @map("started_at")
+  finishedAt        DateTime?         @map("finished_at")
+  summaryJson       Json?             @map("summary_json")
+  errorCode         String?           @map("error_code") @db.VarChar(80)
+  errorMessage      String?           @map("error_message")
+  createdAt         DateTime          @default(now()) @map("created_at")
+
+  @@index([accountId, startedAt])
+  @@index([accountId, status])
+  @@map("trading_sync_runs")
+}
+
+model TradingAccountSnapshot {
+  id             String         @id @default(cuid())
+  accountId      String         @map("account_id")
+  account        TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  capturedAt     DateTime       @default(now()) @map("captured_at")
+  balance        Decimal        @db.Decimal(20, 8)
+  equity         Decimal        @db.Decimal(20, 8)
+  margin         Decimal        @db.Decimal(20, 8)
+  freeMargin     Decimal        @map("free_margin") @db.Decimal(20, 8)
+  marginLevel    Decimal?       @map("margin_level") @db.Decimal(20, 8)
+  unrealizedPnl  Decimal        @map("unrealized_pnl") @db.Decimal(20, 8)
+  realizedPnlDay Decimal        @map("realized_pnl_day") @db.Decimal(20, 8)
+  metadataJson   Json?          @map("metadata_json")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  @@index([accountId, capturedAt])
+  @@map("trading_account_snapshots")
+}
+
+model TradingPosition {
+  id               String                @id @default(cuid())
+  accountId        String                @map("account_id")
+  account          TradingAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  brokerPositionId String                @map("broker_position_id") @db.VarChar(80)
+  brokerOrderId    String?               @map("broker_order_id") @db.VarChar(80)
+  symbol           String                @db.VarChar(20)
+  side             PositionSide
+  volume           Decimal               @db.Decimal(20, 8)
+  openPrice        Decimal               @map("open_price") @db.Decimal(20, 8)
+  stopLoss         Decimal?              @map("stop_loss") @db.Decimal(20, 8)
+  takeProfit       Decimal?              @map("take_profit") @db.Decimal(20, 8)
+  currentPrice     Decimal?              @map("current_price") @db.Decimal(20, 8)
+  swap             Decimal               @default(0) @db.Decimal(20, 8)
+  commission       Decimal               @default(0) @db.Decimal(20, 8)
+  unrealizedPnl    Decimal               @default(0) @map("unrealized_pnl") @db.Decimal(20, 8)
+  openedAt         DateTime              @map("opened_at")
+  closedAt         DateTime?             @map("closed_at")
+  status           TradingPositionStatus @default(OPEN)
+  lastSyncedAt     DateTime              @map("last_synced_at")
+  rawBrokerJson    Json?                 @map("raw_broker_json")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  @@unique([accountId, brokerPositionId])
+  @@index([accountId, status, symbol])
+  @@index([accountId, openedAt])
+  @@map("trading_positions")
+}
+
+model TradingOrder {
+  id                      String             @id @default(cuid())
+  accountId               String             @map("account_id")
+  account                 TradingAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  brokerOrderId           String             @map("broker_order_id") @db.VarChar(80)
+  relatedPositionBrokerId String?            @map("related_position_broker_id") @db.VarChar(80)
+  symbol                  String             @db.VarChar(20)
+  side                    PositionSide
+  orderType               TradingOrderType   @map("order_type")
+  requestedVolume         Decimal            @map("requested_volume") @db.Decimal(20, 8)
+  filledVolume            Decimal            @default(0) @map("filled_volume") @db.Decimal(20, 8)
+  price                   Decimal?           @db.Decimal(20, 8)
+  stopLoss                Decimal?           @map("stop_loss") @db.Decimal(20, 8)
+  takeProfit              Decimal?           @map("take_profit") @db.Decimal(20, 8)
+  status                  TradingOrderStatus
+  placedAt                DateTime           @map("placed_at")
+  expiresAt               DateTime?          @map("expires_at")
+  lastSyncedAt            DateTime           @map("last_synced_at")
+  rawBrokerJson           Json?              @map("raw_broker_json")
+  createdAt               DateTime           @default(now()) @map("created_at")
+  updatedAt               DateTime           @updatedAt @map("updated_at")
+
+  @@unique([accountId, brokerOrderId])
+  @@index([accountId, status])
+  @@index([accountId, placedAt])
+  @@map("trading_orders")
+}
+
+model TradingDeal {
+  id               String         @id @default(cuid())
+  accountId        String         @map("account_id")
+  account          TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  brokerDealId     String         @map("broker_deal_id") @db.VarChar(80)
+  brokerOrderId    String?        @map("broker_order_id") @db.VarChar(80)
+  brokerPositionId String?        @map("broker_position_id") @db.VarChar(80)
+  symbol           String         @db.VarChar(20)
+  side             PositionSide
+  volume           Decimal        @db.Decimal(20, 8)
+  price            Decimal        @db.Decimal(20, 8)
+  commission       Decimal        @default(0) @db.Decimal(20, 8)
+  swap             Decimal        @default(0) @db.Decimal(20, 8)
+  fee              Decimal        @default(0) @db.Decimal(20, 8)
+  realizedPnl      Decimal        @default(0) @map("realized_pnl") @db.Decimal(20, 8)
+  executedAt       DateTime       @map("executed_at")
+  comment          String?        @db.VarChar(255)
+  rawBrokerJson    Json?          @map("raw_broker_json")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  @@unique([accountId, brokerDealId])
+  @@index([accountId, executedAt])
+  @@index([accountId, brokerPositionId])
+  @@map("trading_deals")
+}
+
+model TradingExecutionCommand {
+  id                String                  @id @default(cuid())
+  accountId         String                  @map("account_id")
+  account           TradingAccount          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tradeIntentId     String?                 @unique @map("trade_intent_id")
+  tradeIntent       TradingTradeIntent?     @relation("TradeIntentExecutionCommand", fields: [tradeIntentId], references: [id], onDelete: SetNull)
+  requestedByUserId String?                 @map("requested_by_user_id")
+  commandType       ExecutionCommandType    @map("command_type")
+  status            ExecutionCommandStatus  @default(PENDING)
+  idempotencyKey    String                  @unique @map("idempotency_key") @db.VarChar(120)
+  symbol            String?                 @db.VarChar(20)
+  side              PositionSide?
+  volume            Decimal?                @db.Decimal(20, 8)
+  price             Decimal?                @db.Decimal(20, 8)
+  stopLoss          Decimal?                @map("stop_loss") @db.Decimal(20, 8)
+  takeProfit        Decimal?                @map("take_profit") @db.Decimal(20, 8)
+  brokerPositionId  String?                 @map("broker_position_id") @db.VarChar(80)
+  brokerOrderId     String?                 @map("broker_order_id") @db.VarChar(80)
+  payloadJson       Json?                   @map("payload_json")
+  riskCheckJson     Json?                   @map("risk_check_json")
+  brokerReference   String?                 @map("broker_reference") @db.VarChar(120)
+  requestedAt       DateTime                @default(now()) @map("requested_at")
+  dispatchedAt      DateTime?               @map("dispatched_at")
+  completedAt       DateTime?               @map("completed_at")
+  reconciledAt      DateTime?               @map("reconciled_at")
+  errorCode         String?                 @map("error_code") @db.VarChar(80)
+  errorMessage      String?                 @map("error_message")
+  events            TradingExecutionEvent[]
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
+
+  @@index([accountId, requestedAt])
+  @@index([accountId, status])
+  @@map("trading_execution_commands")
+}
+
+model TradingExecutionEvent {
+  id           String                  @id @default(cuid())
+  commandId    String                  @map("command_id")
+  command      TradingExecutionCommand @relation(fields: [commandId], references: [id], onDelete: Cascade)
+  eventType    String                  @map("event_type") @db.VarChar(80)
+  occurredAt   DateTime                @default(now()) @map("occurred_at")
+  statusBefore ExecutionCommandStatus? @map("status_before")
+  statusAfter  ExecutionCommandStatus? @map("status_after")
+  message      String?                 @db.VarChar(500)
+  payloadJson  Json?                   @map("payload_json")
+  createdAt    DateTime                @default(now()) @map("created_at")
+
+  @@index([commandId, occurredAt])
+  @@map("trading_execution_events")
+}
+
+model TradingAutomationBinding {
+  id                  String                         @id @default(cuid())
+  accountId           String                         @map("account_id")
+  account             TradingAccount                 @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  indicatorInstanceId String                         @map("indicator_instance_id")
+  indicatorInstance   IndicatorInstance              @relation(fields: [indicatorInstanceId], references: [id], onDelete: Cascade)
+  name                String                         @db.VarChar(120)
+  status              TradingAutomationBindingStatus @default(PENDING_APPROVAL)
+  mode                TradingAutomationMode          @default(MANUAL_APPROVAL)
+  filtersJson         Json?                          @map("filters_json")
+  riskConfigJson      Json?                          @map("risk_config_json")
+  guardrailsJson      Json?                          @map("guardrails_json")
+  killSwitchActive    Boolean                        @default(false) @map("kill_switch_active")
+  approvalRequired    Boolean                        @default(true) @map("approval_required")
+  createdByUserId     String?                        @map("created_by_user_id")
+  approvedByUserId    String?                        @map("approved_by_user_id")
+  approvedAt          DateTime?                      @map("approved_at")
+  lastTriggeredAt     DateTime?                      @map("last_triggered_at")
+  statusReason        String?                        @map("status_reason")
+  tradeIntents        TradingTradeIntent[]
+  createdAt           DateTime                       @default(now()) @map("created_at")
+  updatedAt           DateTime                       @updatedAt @map("updated_at")
+
+  @@unique([accountId, indicatorInstanceId, name])
+  @@index([accountId, status])
+  @@index([indicatorInstanceId, status])
+  @@map("trading_automation_bindings")
+}
+
+model TradingTradeIntent {
+  id                  String                   @id @default(cuid())
+  accountId           String                   @map("account_id")
+  account             TradingAccount           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bindingId           String                   @map("binding_id")
+  binding             TradingAutomationBinding @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+  indicatorInstanceId String                   @map("indicator_instance_id")
+  indicatorInstance   IndicatorInstance        @relation(fields: [indicatorInstanceId], references: [id], onDelete: Cascade)
+  signalEventId       String                   @map("signal_event_id")
+  signalEvent         SignalEvent              @relation(fields: [signalEventId], references: [id], onDelete: Cascade)
+  mode                TradingAutomationMode    @default(AUTO_EXECUTE)
+  status              TradeIntentStatus        @default(QUEUED)
+  eventType           SignalEventType          @map("event_type")
+  commandType         ExecutionCommandType     @default(OPEN_MARKET) @map("command_type")
+  symbol              String                   @db.VarChar(20)
+  side                PositionSide?
+  volume              Decimal?                 @db.Decimal(20, 8)
+  entryPrice          Decimal?                 @map("entry_price") @db.Decimal(20, 8)
+  stopLoss            Decimal?                 @map("stop_loss") @db.Decimal(20, 8)
+  takeProfit          Decimal?                 @map("take_profit") @db.Decimal(20, 8)
+  payloadJson         Json?                    @map("payload_json")
+  statusReason        String?                  @map("status_reason")
+  startedAt           DateTime?                @map("started_at")
+  completedAt         DateTime?                @map("completed_at")
+  lastQueuedAt        DateTime?                @map("last_queued_at")
+  executionCommand    TradingExecutionCommand? @relation("TradeIntentExecutionCommand")
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
+
+  @@unique([bindingId, signalEventId])
+  @@index([accountId, status, createdAt])
+  @@index([indicatorInstanceId, createdAt])
+  @@index([signalEventId])
+  @@map("trading_trade_intents")
+}
+
+model TradingInvestigationOutcomeRecord {
+  id                  String                        @id @default(cuid())
+  signalCode          String                        @map("signal_code") @db.VarChar(60)
+  signalVersion       Int                           @map("signal_version")
+  rootCause           TradingInvestigationRootCause @map("root_cause")
+  outcome             TradingInvestigationOutcome
+  backtestRunId       String?                       @map("backtest_run_id")
+  indicatorInstanceId String?                       @map("indicator_instance_id")
+  tradeRecordId       String?                       @map("trade_record_id")
+  summary             String?
+  evidenceJson        Json?                         @map("evidence_json")
+  createdAt           DateTime                      @default(now()) @map("created_at")
+
+  @@index([signalCode, signalVersion, createdAt])
+  @@index([tradeRecordId, createdAt])
+  @@index([indicatorInstanceId, createdAt])
+  @@map("trading_investigation_outcomes")
+}
+
+model TradingWebhookEndpoint {
+  id                      String                   @id @default(cuid())
+  name                    String                   @db.VarChar(120)
+  url                     String                   @db.VarChar(500)
+  contractKindsJson       Json                     @map("contract_kinds_json")
+  bearerTokenCiphertext   String?                  @map("bearer_token_ciphertext") @db.Text
+  signingSecretCiphertext String                   @map("signing_secret_ciphertext") @db.Text
+  isActive                Boolean                  @default(true) @map("is_active")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  deliveries              TradingWebhookDelivery[]
+
+  @@index([isActive, createdAt])
+  @@map("trading_webhook_endpoints")
+}
+
+model TradingWebhookDelivery {
+  id               String                       @id @default(cuid())
+  endpointId       String                       @map("endpoint_id")
+  endpoint         TradingWebhookEndpoint       @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  status           TradingWebhookDeliveryStatus
+  httpStatus       Int?                         @map("http_status")
+  errorMessage     String?                      @map("error_message")
+  responseBodyText String?                      @map("response_body_text") @db.Text
+  recordCount      Int                          @default(0) @map("record_count")
+  queryJson        Json?                        @map("query_json")
+  payloadJson      Json?                        @map("payload_json")
+  recordRefsJson   Json?                        @map("record_refs_json")
+  attemptedAt      DateTime                     @default(now()) @map("attempted_at")
+  deliveredAt      DateTime?                    @map("delivered_at")
+  createdAt        DateTime                     @default(now()) @map("created_at")
+
+  @@index([endpointId, attemptedAt])
+  @@index([status, attemptedAt])
+  @@map("trading_webhook_deliveries")
+}

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: binance-timescaledb
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=binance_trade
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  external-signal-db:
+    image: postgres:16-alpine
+    container_name: binance-external-signal-db
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=external_signal
+    volumes:
+      - external_signal_db_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: binance-redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+volumes:
+  timescaledb_data:
+  external_signal_db_data:
