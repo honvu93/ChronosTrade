@@ -91,6 +91,26 @@ npx prisma generate
 npx prisma migrate deploy
 ```
 
+### 3.5. Import Historical Candlestick Data (Recommended)
+
+To load the pre-packaged historical candlestick data dump containing over 1.6M rows of bar data (XAUUSD, BTCUSD, XAGUSD):
+
+1. **Restore the table from the dump file:**
+   ```bash
+   docker exec -i binance-timescaledb pg_restore -U postgres -d binance_trade --clean --no-owner < backups/price_candles_only.dump
+   ```
+   *Note: This will import the data into a temporary table named `price_candles_export`.*
+
+2. **Convert the table to a TimescaleDB Hypertable:**
+   Connect to your local `binance_trade` database (e.g. via DBeaver or pgAdmin) and run the following SQL queries to rename it and establish the hypertable:
+   ```sql
+   -- Rename the table to the active candles table name
+   ALTER TABLE public.price_candles_export RENAME TO price_candles;
+
+   -- Convert the table into a time-partitioned TimescaleDB hypertable
+   SELECT create_hypertable('price_candles', 'time');
+   ```
+
 ### 4. Start Backend
 
 ```bash
