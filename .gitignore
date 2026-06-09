@@ -11,10 +11,6 @@ web/.env.local
 mt5-service/.env
 mt5-service/.trade-exec.env
 infrastructure/backup.env
-OmniRoute/.env.omniroute-a
-OmniRoute/.env.omniroute-b
-OmniRoute/.env.omniroute-c
-OmniRoute/.codex/
 vps_key
 vps_key.pub
 
